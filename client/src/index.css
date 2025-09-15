@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Small helpers for consistent UI */
+.select { @apply border rounded px-2 py-1 bg-white; }
+.input  { @apply border rounded px-2 py-1; }
