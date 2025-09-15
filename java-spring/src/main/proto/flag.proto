@@ -1,0 +1,118 @@
+syntax = "proto3";
+package flag.v1;
+
+option java_multiple_files = true;
+option java_package = "com.example.clearcard";
+option java_outer_classname = "ClearCardProto";
+
+import "google/protobuf/timestamp.proto";
+
+// ---- Python App service (source of truth) ----
+message FlagMutationRequest {
+  int32 target_value = 1;   // e.g., 1
+  string request_id = 2;    // UUID for traceability
+}
+
+message FlagState {
+  int32 value = 1;                         // current flag value
+  google.protobuf.Timestamp updated_at = 2;// when it was last set
+  string status = 3;                       // "OK" or "ERROR"
+  string error_message = 4;                // present if status != "OK"
+}
+
+service FlagService {
+  rpc SetFlagAndGet(FlagMutationRequest) returns (FlagState);
+}
+
+// ---- Message-Handler service (proxy for Java) ----
+message ControllerRequest {
+  int32 target_value = 1;
+  string request_id = 2;
+}
+
+message ControllerResponse {
+  int32 value = 1;
+  string status = 2;
+  string error_message = 3;
+}
+
+service FlagController {
+  rpc SetAndRead(ControllerRequest) returns (ControllerResponse);
+}
+
+message SqlRequest {
+  string sql        = 1;  // raw SQL text (server will sanitize 'USE/GO' lines)
+  uint32 page_size  = 2;  // rows per chunk (default 500 if 0)
+  string request_id = 3;  // for tracing
+}
+
+message TableSchema {
+  repeated string columns = 1; // column names in order
+}
+
+message SqlRow {
+  repeated string cells = 1;   // row values as strings (NULL -> "")
+}
+
+message SqlChunk {
+  TableSchema schema   = 1;    // sent on first chunk (and may repeat)
+  repeated SqlRow rows = 2;    // page of rows
+  string status        = 3;    // "OK" or "ERROR"
+  string error_message = 4;    // set if status != "OK"
+  bool last            = 5;    // true on final chunk
+}
+
+service SqlService {           // lives in the Python "app"
+  rpc Execute (SqlRequest) returns (stream SqlChunk);
+}
+
+service SqlController {        // lives in the Python message-handler (proxy)
+  rpc Run (SqlRequest) returns (stream SqlChunk);
+}
+
+// ---- Job API ----
+message JobId {
+  string job_id = 1;    // UUID
+  string request_id = 2;
+}
+
+message SqlJobOptions {
+  uint32 page_size = 1; // rows per fetch from DB (e.g., 5000)
+  uint64 max_rows = 2;  // hard cap to stop runaway jobs
+  string format = 3;    // "csv" (start with csv+gzip)
+}
+
+message SubmitJobRequest {
+  string sql = 1;
+  SqlJobOptions options = 2;
+  string user_id = 3;      // who submitted (use anything you have now)
+  string request_id = 4;   // for tracing
+}
+
+message JobAck {
+  string job_id = 1;
+  string status = 2;       // "PENDING" if queued
+}
+
+message JobStatus {
+  string state = 1;        // PENDING/RUNNING/SUCCEEDED/FAILED/CANCELLED
+  uint64 row_count = 2;
+  uint64 bytes = 3;
+  string error_message = 4;
+  google.protobuf.Timestamp submitted_at = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+message ResultManifestRef {
+  string gcs_manifest_uri = 1; // gs://clearcard-sql-results/jobs/<job_id>/manifest.json
+  string status = 2;           // "OK" or "ERROR"
+  string error_message = 3;
+}
+
+service JobService {
+  rpc Submit(SubmitJobRequest) returns (JobAck);
+  rpc GetStatus(JobId) returns (JobStatus);
+  rpc GetResultManifest(JobId) returns (ResultManifestRef);
+  rpc Cancel(JobId) returns (JobStatus);
+}

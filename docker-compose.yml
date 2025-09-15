@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cc-redis
+    ports:
+      - "6379:6379"
+
+  message-handler:
+    build:
+      context: ./message-handler
+    container_name: cc-message-handler
+    environment:
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      # MSSQL metadata DB (adjust user/pwd/db)
+      MSSQL_HOST: 35.184.80.250
+      MSSQL_DB: meta
+      MSSQL_USER: sqlserver
+      MSSQL_PWD: Dream2002!
+      MSSQL_DRIVER: ODBC Driver 18 for SQL Server
+      APP_PORT: 50052
+      MH_PORT: "50051"
+    depends_on:
+      - redis
+    ports:
+      - "50051:50051"   # optional: expose for debugging
+
+  worker:
+    build:
+      context: ./worker
+    container_name: cc-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MSSQL_HOST: 35.184.80.250
+      MSSQL_DB: meta
+      MSSQL_USER: sqlserver
+      MSSQL_PWD: Dream2002!
+      MSSQL_DRIVER: ODBC Driver 18 for SQL Server
+      MSSQL_QUERY_TIMEOUT: "300"
+      GCS_BUCKET: clearcard-sql-results
+      RESULT_CHUNK_MAX_MB: "100"   # 100MB chunks in prod
+      APP_PORT: 50052
+    volumes:
+      - ./secrets/gcp-key.json:/secrets/gcp/key.json:ro
+    depends_on:
+      - redis
+
+  spring:
+    build:
+      context: ./java-spring
+    container_name: cc-spring
+    environment:
+      MSG_HANDLER_HOST: message-handler
+      MSG_HANDLER_PORT: "50051"
+      # For Spring Cloud GCP (if you use it):
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp/key.json
+      SPRING_CLOUD_GCP_CREDENTIALS_LOCATION: file:/secrets/gcp/key.json
+      # If your config uses gcs.bucket property:
+      GCS_BUCKET: clearcard-sql-results
+    volumes:
+      - ./secrets/gcp-key.json:/secrets/gcp/key.json:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - message-handler
