@@ -1,5 +1,3 @@
-/.git
-/.gitattributes
 HELP.md
 .gradle
 build/
@@ -40,6 +38,3 @@ out/
 
 ### JTE ###
 /jte-classes/
-
-
-client/

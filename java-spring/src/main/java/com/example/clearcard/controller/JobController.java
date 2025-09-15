@@ -120,7 +120,15 @@ public class JobController {
                                                     @RequestParam(defaultValue="5000000") @Min(1) long maxRows,
                                                     @RequestHeader(value="X-Request-Id", required=false) String xReqId,
                                                     HttpServletRequest req) {
-        var ack = jobClient.submit(sql, format, pageSize, maxRows, /*userId*/ "user-1", xReqId);
+
+        // fetch user id from security context
+        String userId = (org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()!=null)
+                ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName()
+                : "anonymous";
+
+        // ack
+        var ack = jobClient.submit(sql, format, pageSize, maxRows, userId, xReqId);
+
         return ResponseEntity.accepted()
                 .location(java.net.URI.create("/jobs/" + ack.getJobId()))
                 .body(new JobSubmitResponse(ack.getJobId(), ack.getStatus()));
