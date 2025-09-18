@@ -1,11 +1,14 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./index.html","./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
+    fontFamily: {
+      sans: ['Helvetica', 'Arial', 'ui-sans-serif', 'system-ui']
+    },
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#002e5a", // JACC (JC)
+          DEFAULT: "#002e5a",
           50:  "#e6ecf3",
           100: "#cdd9e7",
           200: "#9bb3cf",
@@ -17,6 +20,12 @@ export default {
           800: "#062134",
           900: "#04161f"
         }
+      },
+      boxShadow: {
+        smooth: "0 10px 30px rgba(2,12,27,.08)"
+      },
+      borderRadius: {
+        xl2: "1rem"
       }
     }
   },

@@ -5,10 +5,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Browser hits /api/* → Vite proxies to http://localhost:8080/* (no /api)
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/api/, "")
       }
     }

@@ -17,29 +17,43 @@ public class JobClient {
         this.base = base;
     }
 
-    private JobServiceGrpc.JobServiceBlockingStub withHeadersAndDeadline(String requestId, long deadlineSec) {
+    private JobServiceGrpc.JobServiceBlockingStub withHeadersAndDeadline(String requestId, long deadlineMin) {
         String rid = (requestId == null || requestId.isBlank()) ? UUID.randomUUID().toString() : requestId;
         Metadata h = new Metadata();
         h.put(Metadata.Key.of("x-request-id", Metadata.ASCII_STRING_MARSHALLER), rid);
 
-        // attach metadata to the base stub's channel for this call only
         ClientInterceptor it = MetadataUtils.newAttachHeadersInterceptor(h);
         Channel intercepted = ClientInterceptors.intercept(base.getChannel(), it);
-
-        return JobServiceGrpc.newBlockingStub(intercepted).withDeadlineAfter(deadlineSec, TimeUnit.MINUTES);
+        return JobServiceGrpc.newBlockingStub(intercepted).withDeadlineAfter(deadlineMin, TimeUnit.MINUTES);
     }
 
+    // Back-compat: existing submit without title/config
     public JobAck submit(String sql, String format, int pageSize, long maxRows,
                          String userId, String requestId) {
+        return submit(sql, format, pageSize, maxRows, userId, requestId, null, null, null);
+    }
+
+    // NEW: submit with title + configs
+    public JobAck submit(String sql, String format, int pageSize, long maxRows,
+                         String userId, String requestId,
+                         String title, String tableConfigJson, String chartConfigJson) {
         SqlJobOptions opts = SqlJobOptions.newBuilder()
-                .setFormat(format).setPageSize(pageSize).setMaxRows(maxRows).build();
-        SubmitJobRequest req = SubmitJobRequest.newBuilder()
+                .setFormat(format == null ? "csv" : format)
+                .setPageSize(pageSize)
+                .setMaxRows(maxRows)
+                .build();
+
+        SubmitJobRequest.Builder b = SubmitJobRequest.newBuilder()
                 .setSql(sql == null ? "" : sql)
                 .setOptions(opts)
                 .setUserId(userId == null ? "anonymous" : userId)
-                .setRequestId(requestId == null ? "" : requestId)
-                .build();
-        return withHeadersAndDeadline(requestId, 2).submit(req);
+                .setRequestId(requestId == null ? "" : requestId);
+
+        if (title != null) b.setTitle(title);
+        if (tableConfigJson != null) b.setTableConfigJson(tableConfigJson);
+        if (chartConfigJson != null) b.setChartConfigJson(chartConfigJson);
+
+        return withHeadersAndDeadline(requestId, 2).submit(b.build());
     }
 
     public JobStatus status(String jobId) {

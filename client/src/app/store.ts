@@ -1,8 +1,14 @@
 import { configureStore } from "@reduxjs/toolkit";
-import jobReducer from "../features/job/jobSlice";
+import authReducer from "../features/auth/authSlice";
+import jobRunReducer from "../features/job/jobRunSlice";
+import jobsReducer from "../features/job/jobsSlice";
 
 export const store = configureStore({
-  reducer: { job: jobReducer }
+  reducer: {
+    auth: authReducer,
+    jobRun: jobRunReducer,
+    jobs: jobsReducer
+  }
 });
 
 export type RootState = ReturnType<typeof store.getState>;

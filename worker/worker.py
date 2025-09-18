@@ -1,3 +1,4 @@
+# worker/worker.py
 import csv, gzip, io, json, os, time
 from datetime import datetime
 
@@ -6,16 +7,16 @@ from google.cloud import storage
 from dotenv import load_dotenv
 load_dotenv()
 
-REDIS_URL   = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-MSSQL_HOST  = os.getenv("MSSQL_HOST")
-MSSQL_DB    = os.getenv("MSSQL_DB")
-MSSQL_USER  = os.getenv("MSSQL_USER")
-MSSQL_PWD   = os.getenv("MSSQL_PWD")
-MSSQL_DRIVER= os.getenv("MSSQL_DRIVER","ODBC Driver 18 for SQL Server")
+REDIS_URL    = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+MSSQL_HOST   = os.getenv("MSSQL_HOST")
+MSSQL_DB     = os.getenv("MSSQL_DB")
+MSSQL_USER   = os.getenv("MSSQL_USER")
+MSSQL_PWD    = os.getenv("MSSQL_PWD")
+MSSQL_DRIVER = os.getenv("MSSQL_DRIVER","ODBC Driver 18 for SQL Server")
 MSSQL_QUERY_TIMEOUT = int(os.getenv("MSSQL_QUERY_TIMEOUT","300"))
 
-GCS_BUCKET  = os.getenv("GCS_BUCKET","clearcard-sql-results")
-CHUNK_MB    = 0.1*int(os.getenv("RESULT_CHUNK_MAX_MB","100"))  # 1 MB for testing; raise to 100 in prod
+GCS_BUCKET   = os.getenv("GCS_BUCKET","clearcard-sql-results")
+CHUNK_MB     = 0.1*int(os.getenv("RESULT_CHUNK_MAX_MB","100"))  # 1 MB for testing; raise to 100 in prod
 
 def _set_cache_status(r, job_id, state, rows=0, bytes_=0, error=""):
     r.setex(
@@ -76,6 +77,16 @@ def run_once():
     max_rows = int(job.get("max_rows", 5_000_000))
     bucket   = job.get("gcs_bucket", GCS_BUCKET)
 
+    # NEW meta (optional)
+    title         = (job.get("title") or "").strip()
+    table_config  = job.get("table_config") or ""
+    chart_config  = job.get("chart_config") or ""
+    def _parse_json(s):
+        try:
+            return json.loads(s) if s else None
+        except Exception:
+            return s  # keep as string if not valid JSON
+
     row_count = 0
     total_bytes = 0
     columns = []
@@ -104,44 +115,40 @@ def run_once():
             def upload_chunk(buf: bytes, idx: int, rows_in_chunk: int):
                 nonlocal total_bytes
                 if rows_in_chunk <= 0 or not buf:
-                    return  # avoid uploading header-only/empty chunks
+                    return
                 name = f"{base_path}part-{idx:05d}.csv.gz"
                 blob = bucket_ref.blob(name)
                 blob.upload_from_file(io.BytesIO(buf), size=len(buf), content_type="application/gzip")
                 total_bytes += len(buf)
                 chunks_meta.append({"uri": f"gs://{bucket}/{name}", "rows": rows_in_chunk, "bytes": len(buf)})
 
-            # --- chunk state (keep text wrapper and flush before closing gzip) ---
+            # --- chunk state ---
             idx = 0
             out = io.BytesIO()
             gz = gzip.GzipFile(fileobj=out, mode="wb")
-            text = io.TextIOWrapper(gz, encoding="utf-8", newline="")  # hold this!
+            text = io.TextIOWrapper(gz, encoding="utf-8", newline="")
             writer = csv.writer(text)
-            #writer.writerow(columns)  # header
+            # writer.writerow(columns)  # header
 
             rows_in_chunk = 0
             last_flush = time.time()
 
             def rotate_chunk():
                 nonlocal out, gz, text, writer, idx, rows_in_chunk
-                # Flush text first so its buffer reaches gzip, then close gzip
                 text.flush()
                 gz.close()
                 data = out.getvalue()
                 upload_chunk(data, idx, rows_in_chunk)
-                # open next chunk
                 idx += 1
                 out = io.BytesIO()
                 gz = gzip.GzipFile(fileobj=out, mode="wb")
                 text = io.TextIOWrapper(gz, encoding="utf-8", newline="")
                 writer = csv.writer(text)
-                #writer.writerow(columns)  # header in each part
                 rows_in_chunk = 0
 
             while True:
                 # cooperative cancel
                 if r.get(f"jobs:cancelled:{job_id}") == "1":
-                    # Finalize current chunk (but do not upload if no data rows in it)
                     text.flush()
                     gz.close()
                     data = out.getvalue()
@@ -179,13 +186,18 @@ def run_once():
             data = out.getvalue()
             upload_chunk(data, idx, rows_in_chunk)
 
-            # write manifest
+            # write manifest (now includes meta)
             manifest = {
                 "columns": columns,
                 "row_count": row_count,
                 "format": "csv",
                 "compression": "gzip",
-                "chunks": chunks_meta
+                "chunks": chunks_meta,
+                "meta": {
+                    "title": title,
+                    "table_config": _parse_json(table_config),
+                    "chart_config": _parse_json(chart_config),
+                }
             }
             mblob = storage.Client().bucket(bucket).blob(f"{base_path}manifest.json")
             mbuf = json.dumps(manifest, ensure_ascii=False).encode("utf-8")

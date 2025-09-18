@@ -11,13 +11,18 @@ export default tseslint.config([
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
-      tseslint.configs.recommended,
+      ...tseslint.configs.recommended,         // keep TS defaults
       reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
     languageOptions: {
       ecmaVersion: 2020,
+      sourceType: 'module',
       globals: globals.browser,
+    },
+    rules: {
+      // Allow intentional `any` (e.g., generic data tables, SQL builders)
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ])

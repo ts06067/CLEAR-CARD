@@ -40,6 +40,7 @@ service FlagController {
   rpc SetAndRead(ControllerRequest) returns (ControllerResponse);
 }
 
+// ---- Ad-hoc SQL streaming API (optional) ----
 message SqlRequest {
   string sql        = 1;  // raw SQL text (server will sanitize 'USE/GO' lines)
   uint32 page_size  = 2;  // rows per chunk (default 500 if 0)
@@ -85,8 +86,13 @@ message SqlJobOptions {
 message SubmitJobRequest {
   string sql = 1;
   SqlJobOptions options = 2;
-  string user_id = 3;      // who submitted (use anything you have now)
+  string user_id = 3;      // who submitted (username, etc.)
   string request_id = 4;   // for tracing
+
+  // NEW (kept as fields 5..7 to preserve wire compatibility)
+  string title = 5;                 // human-readable job title
+  string table_config_json = 6;     // JSON string for table config (UI)
+  string chart_config_json = 7;     // JSON string for chart config (UI)
 }
 
 message JobAck {

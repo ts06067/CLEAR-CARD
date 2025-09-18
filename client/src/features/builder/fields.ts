@@ -1,95 +1,57 @@
-import type {
-  Field,
-  Operator,
-  ValueEditorType,
-  InputType
-} from "react-querybuilder";
+/**
+ * Fields available in the query builder and chart config.
+ * Keep names aligned with columns that exist in the final SELECT (FROM aggregation)
+ * or upstream CTEs if used only for filtering.
+ */
 
-export type FieldKey =
-  | "cited_journal"
-  | "cited_title"
-  | "cited_eid"
-  | "cited_category"
-  | "cited_pub_year"
-  | "cited_pub_month"
-  | "cited_pub_day"
-  | "cited_pub_date"
-  | "fitness"
-  | "citation_count"
-  | "citation_count_bin_raw"
-  | "fitness_bin_raw"
-  | "citation_count_percentile_decile"
-  | "fitness_percentile_decile"
-  | "citation_time_days";
+export type FieldType = "text" | "number" | "date";
 
-export const STRING_FIELDS: FieldKey[] = [
-  "cited_journal",
-  "cited_title",
-  "cited_eid",
-  "cited_category"
-];
-export const NUM_FIELDS: FieldKey[] = [
-  "cited_pub_year",
-  "cited_pub_month",
-  "cited_pub_day",
-  "fitness",
-  "citation_count",
-  "citation_count_bin_raw",
-  "fitness_bin_raw",
-  "citation_count_percentile_decile",
-  "fitness_percentile_decile",
-  "citation_time_days"
-];
-export const DATE_FIELDS: FieldKey[] = ["cited_pub_date"];
+export interface FieldDef {
+  name: string;     // alias/column name
+  label: string;    // human label
+  type: FieldType;
+}
 
-const makeTextField = (name: FieldKey): Field => ({
-  name,
-  label: name,
-  valueEditorType: "text" as ValueEditorType
-});
+export const FIELDS: FieldDef[] = [
+  // ---- cited (target) ----
+  { name: "cited_id",         label: "Cited Paper ID",     type: "number" },
+  { name: "cited_eid",        label: "Cited EID",          type: "text" },
+  { name: "cited_doi",        label: "Cited DOI",          type: "text" },
+  { name: "cited_title",      label: "Cited Title",        type: "text" },
+  { name: "cited_journal",    label: "Cited Journal",      type: "text" },
+  { name: "cited_pub_date",   label: "Cited Pub Date",     type: "date" },
+  { name: "cited_pub_year",   label: "Cited Pub Year",     type: "number" },
+  { name: "cited_pub_month",  label: "Cited Pub Month",    type: "number" },
+  { name: "cited_pub_day",    label: "Cited Pub Day",      type: "number" },
 
-const makeNumberField = (name: FieldKey): Field => ({
-  name,
-  label: name,
-  valueEditorType: "text" as ValueEditorType,
-  inputType: "number" as InputType
-});
+  // ---- citing (source) ----
+  { name: "citing_id",        label: "Citing Paper ID",    type: "number" },
+  { name: "citing_eid",       label: "Citing EID",         type: "text" },
+  { name: "citing_doi",       label: "Citing DOI",         type: "text" },
+  { name: "citing_title",     label: "Citing Title",       type: "text" },
+  { name: "citing_journal",   label: "Citing Journal",     type: "text" },
+  { name: "citing_pub_date",  label: "Citing Pub Date",    type: "date" },
+  { name: "citing_pub_year",  label: "Citing Pub Year",    type: "number" },
+  { name: "citing_pub_month", label: "Citing Pub Month",   type: "number" },
+  { name: "citing_pub_day",   label: "Citing Pub Day",     type: "number" },
 
-const makeDateField = (name: FieldKey): Field => ({
-  name,
-  label: name,
-  valueEditorType: "text" as ValueEditorType,
-  inputType: "date" as InputType
-});
-
-export const fields: Field[] = [
-  ...STRING_FIELDS.map(makeTextField),
-  ...NUM_FIELDS.map(makeNumberField),
-  ...DATE_FIELDS.map(makeDateField)
+  // ---- derived (from condition / aggregation CTEs) ----
+  { name: "citation_time_days",                label: "Citation Lag (days)",              type: "number" },
+  { name: "cited_category",                    label: "Cited Category",                   type: "text"   },
+  { name: "fitness",                           label: "Fitness (per cited_eid)",          type: "number" },
+  { name: "citation_count",                    label: "Citation Count (per cited_eid)",   type: "number" },
+  { name: "citation_count_bin_raw",            label: "Citation Count Bin (raw)",         type: "number" },
+  { name: "fitness_bin_raw",                   label: "Fitness Bin (raw)",                type: "number" },
+  { name: "citation_count_percentile_decile",  label: "Citation Count Percentile (decile)", type: "number" },
+  { name: "fitness_percentile_decile",         label: "Fitness Percentile (decile)",      type: "number" }
 ];
 
-export const stringOperators: Operator[] = [
-  { name: "=", label: "EXACTLY" },
-  { name: "!=", label: "NOT EXACTLY" },
-  { name: "contains", label: "CONTAINS" },
-  { name: "doesNotContain", label: "NOT CONTAIN" },
-  { name: "beginsWith", label: "START WITH" },
-  { name: "endsWith", label: "END WITH" }
-];
+export function isNumericField(name: string): boolean {
+  const f = FIELDS.find((x) => x.name === name);
+  return f?.type === "number";
+}
 
-export const numberOperators: Operator[] = [
-  { name: ">", label: ">" },
-  { name: ">=", label: ">=" },
-  { name: "<", label: "<" },
-  { name: "<=", label: "<=" },
-  { name: "=", label: "==" },
-  { name: "!=", label: "!=" },
-  { name: "between", label: "BETWEEN" }
-];
-
-export const dateOperators: Operator[] = [
-  { name: "=", label: "==" },
-  { name: ">=", label: ">=" },
-  { name: "<=", label: "<=" },
-  { name: "between", label: "BETWEEN" }
-];
+export function isDateField(name: string): boolean {
+  const f = FIELDS.find((x) => x.name === name);
+  return f?.type === "date";
+}
