@@ -25,7 +25,6 @@ public class JobsDao {
         return jdbc.query(sql, (rs, i) -> mapJob(rs), username, offset, limit);
     }
 
-    // FIX: return Optional<JobDetail>, not Optional<JobRow>
     public Optional<JobDetail> getOne(String jobId, String username) {
         String sql = """
            SELECT TOP (1)

@@ -53,12 +53,7 @@ function normalizeSummary(raw: any): JobSummary | null {
 
   const status = normalizeStatus(raw?.status ?? raw?.state ?? raw?.jobStatus);
 
-  return {
-    id: id.trim(),
-    title,
-    createdAt: String(createdAtRaw),
-    status
-  };
+  return { id: id.trim(), title, createdAt: String(createdAtRaw), status };
 }
 
 function normalizeDetail(raw: any, jobId: string): JobDetail {
@@ -68,16 +63,9 @@ function normalizeDetail(raw: any, jobId: string): JobDetail {
   if (typeof config === "string") {
     try { config = JSON.parse(config); } catch { /* ignore */ }
   }
-  const ownerId =
-    String(
-      raw?.ownerId ??
-      raw?.owner_id ??
-      raw?.userId ??
-      raw?.user_id ??
-      raw?.createdBy ??
-      ""
-    );
-
+  const ownerId = String(
+    raw?.ownerId ?? raw?.owner_id ?? raw?.userId ?? raw?.user_id ?? raw?.createdBy ?? ""
+  );
   return { ...base, sql, config, ownerId };
 }
 
@@ -113,16 +101,12 @@ export async function submitJob(
     return data;
   } catch (err: any) {
     const status = err?.response?.status;
-
-    // Fallback to JSON body if server doesn't accept text/plain or needs CSRF replay
     if (status === 403 || status === 415 || status === 400) {
       const body = {
         sql,
         title: opts?.title ?? null,
-        config: opts?.config ?? null,
-        format: params.format,
-        pageSize: params.pageSize,
-        maxRows: params.maxRows
+        tableConfig: opts?.config?.qb ?? null,
+        chartConfig: opts?.config?.cfg ?? null
       };
       const { data } = await api.post<JobSubmitResponse>("/jobs", body, {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -141,7 +125,12 @@ export async function getJobStatus(jobId: string) {
 }
 
 export async function getResultJson(jobId: string) {
-  const { data } = await api.get<any[]>(`/jobs/${jobId}/download.json`);
+  // Robust: ask for JSON explicitly and parse as JSON array
+  const { data } = await api.get<any[]>(`/jobs/${jobId}/download.json`, {
+    headers: { Accept: "application/json" },
+    responseType: "json",
+    validateStatus: (s) => s >= 200 && s < 300 // let caller catch 409/404 as errors
+  });
   return data;
 }
 
@@ -150,16 +139,12 @@ export function getResultCsvUrl(jobId: string) {
 }
 
 export async function listMyJobs() {
-  // Try both endpoints, then normalize & filter invalid rows
   try {
     const { data } = await api.get<any[]>("/jobs/mine");
-    const mapped = (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
-    return mapped;
-  } catch (_e) {
-    void _e;
+    return (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
+  } catch {
     const { data } = await api.get<any[]>("/jobs", { params: { owner: "me" } });
-    const mapped = (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
-    return mapped;
+    return (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
   }
 }
 
@@ -171,7 +156,7 @@ export async function getJob(jobId: string) {
 export async function setServerPin(jobId: string, pinned: boolean) {
   try {
     await api.patch(`/jobs/${jobId}/pin`, { pinned });
-  } catch (_e) {
-    void _e;
+  } catch {
+    // ignore best-effort pin errors
   }
 }
