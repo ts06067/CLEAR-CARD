@@ -3,6 +3,7 @@ package com.example.clearcard.controller;
 import com.example.clearcard.ControllerRequest;
 import com.example.clearcard.ControllerResponse;
 import com.example.clearcard.FlagControllerGrpc;
+import com.example.clearcard.config.AppProps;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
@@ -10,7 +11,6 @@ import io.grpc.StatusRuntimeException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,11 +23,14 @@ public class FlagController {
 
     private static final Logger log = LoggerFactory.getLogger(FlagController.class);
 
-    @Value("${grpc.handlerHost}")
-    private String handlerHost;
+    private final String handlerHost;
+    private final int handlerPort;
 
-    @Value("${grpc.handlerPort}")
-    private int handlerPort;
+    public FlagController(AppProps props) {
+        this.handlerHost = props.grpc().getHandlerHost();
+        this.handlerPort = props.grpc().getHandlerPort();
+        log.info("FlagController will dial gRPC at {}:{}", handlerHost, handlerPort);
+    }
 
     // GET /flag?value=<integer>
     @GetMapping("/flag")
@@ -71,18 +74,16 @@ public class FlagController {
 
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress(handlerHost, handlerPort)
-                .usePlaintext() // TODO: enable TLS for prod
+                .usePlaintext()
                 .build();
 
         try {
-            // gRPC stub + metadata (propagate request_id)
             // build headers
             Metadata headers = new Metadata();
-            Metadata.Key<String> X_REQUEST_ID =
-                    Metadata.Key.of("x-request-id", Metadata.ASCII_STRING_MARSHALLER);
+            Metadata.Key<String> X_REQUEST_ID = Metadata.Key.of("x-request-id", Metadata.ASCII_STRING_MARSHALLER);
             headers.put(X_REQUEST_ID, requestId);
 
-            // build stub with interceptor that attaches headers
+            // stub with headers + deadline
             FlagControllerGrpc.FlagControllerBlockingStub stub =
                     FlagControllerGrpc.newBlockingStub(channel)
                             .withInterceptors(io.grpc.stub.MetadataUtils.newAttachHeadersInterceptor(headers))
@@ -111,7 +112,6 @@ public class FlagController {
             log.info("HTTP out success request_id={} total_latency_ms={} return_value={}",
                     requestId, totalMs, resp.getValue());
 
-            // Return the source-of-truth value from Python app
             return ResponseEntity.ok(String.valueOf(resp.getValue()));
 
         } catch (StatusRuntimeException e) {

@@ -1,3 +1,4 @@
+// client/src/api/jobs.ts
 import { api } from "./client";
 
 /* ---------- Types ---------- */
@@ -87,6 +88,8 @@ export async function submitJob(
     maxRows: opts?.maxRows ?? 5_000_000
   };
 
+  console.log("Submitting job with params:", params, "and config:", opts?.config);
+
   await ensureCsrfCookie();
 
   try {
@@ -98,6 +101,8 @@ export async function submitJob(
       },
       params
     });
+
+    console.log("Job submitted, got response:", data);
     return data;
   } catch (err: any) {
     const status = err?.response?.status;
@@ -125,13 +130,20 @@ export async function getJobStatus(jobId: string) {
 }
 
 export async function getResultJson(jobId: string) {
-  // Robust: ask for JSON explicitly and parse as JSON array
-  const { data } = await api.get<any[]>(`/jobs/${jobId}/download.json`, {
-    headers: { Accept: "application/json" },
-    responseType: "json",
-    validateStatus: (s) => s >= 200 && s < 300 // let caller catch 409/404 as errors
-  });
-  return data;
+  if (!jobId) throw new Error("jobId required");
+  // Treat 409/404 as "not ready" and return null instead of throwing.
+  try {
+    const { data } = await api.get<any[]>(`/jobs/${jobId}/download.json`, {
+      headers: { Accept: "application/json" },
+      responseType: "json",
+    });
+    return data;
+  } catch (err: any) {
+    console.error("Error fetching JSON result for job", jobId, err);
+    const st = err?.response?.status;
+    if (st === 409 || st === 404) return null;
+    throw err;
+  }
 }
 
 export function getResultCsvUrl(jobId: string) {

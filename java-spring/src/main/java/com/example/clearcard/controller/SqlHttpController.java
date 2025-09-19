@@ -3,6 +3,7 @@ package com.example.clearcard.controller;
 import com.example.clearcard.SqlChunk;
 import com.example.clearcard.SqlControllerGrpc;
 import com.example.clearcard.SqlRequest;
+import com.example.clearcard.config.AppProps;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptor;
 import io.grpc.ManagedChannel;
@@ -13,7 +14,6 @@ import io.grpc.stub.MetadataUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -26,11 +26,14 @@ public class SqlHttpController {
 
     private static final Logger log = LoggerFactory.getLogger(SqlHttpController.class);
 
-    @Value("${grpc.handlerHost}")
-    private String handlerHost;
+    private final String handlerHost;
+    private final int handlerPort;
 
-    @Value("${grpc.handlerPort}")
-    private int handlerPort;
+    public SqlHttpController(AppProps props) {
+        this.handlerHost = props.grpc().getHandlerHost();
+        this.handlerPort = props.grpc().getHandlerPort();
+        log.info("SqlHttpController will dial gRPC at {}:{}", handlerHost, handlerPort);
+    }
 
     /** JSON response shape */
     public static class TableJson {
@@ -45,8 +48,8 @@ public class SqlHttpController {
      * POST /sql
      * Body: raw SQL (text/plain)
      * Query params:
-     *   - pageSize (default 500): number of rows per gRPC chunk fetched from Python
-     *   - maxRows  (default 5000): cap rows returned to client (for safety)
+     *   - pageSize (default 500): rows per gRPC chunk
+     *   - maxRows  (default 5000): cap rows returned
      */
     @PostMapping(value = "/sql", consumes = MediaType.TEXT_PLAIN_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<TableJson> runSql(@RequestBody String sql,
@@ -62,10 +65,9 @@ public class SqlHttpController {
         final long t0 = System.nanoTime();
         log.info("HTTP /sql start request_id={} client={} pageSize={} maxRows={}", requestId, client, pageSize, maxRows);
 
-        // Build a Netty-based channel (no OkHttp)
         ManagedChannel base = ManagedChannelBuilder
                 .forAddress(handlerHost, handlerPort)
-                .usePlaintext() // TODO: enable TLS for production
+                .usePlaintext()
                 .build();
 
         TableJson out = new TableJson();
@@ -95,7 +97,6 @@ public class SqlHttpController {
             while (it.hasNext()) {
                 SqlChunk chunk = it.next();
 
-                // Capture schema once (avoid hasSchema() portability issues)
                 if (!haveColumns && chunk.getSchema().getColumnsCount() > 0) {
                     out.columns = new ArrayList<>(chunk.getSchema().getColumnsList());
                     haveColumns = true;

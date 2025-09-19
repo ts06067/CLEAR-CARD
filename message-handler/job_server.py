@@ -63,6 +63,8 @@ class JobService(pb_grpc.JobServiceServicer):
         req_id  = request.request_id or str(uuid.uuid4())
         user_id = request.user_id or "anonymous"
 
+        print(f"[broker] Submit job {job_id} for user {user_id} (req {req_id})", flush=True)
+
         # core fields
         sql_raw   = request.sql or ""
         sql       = _normalize_sql(sql_raw)
@@ -75,6 +77,8 @@ class JobService(pb_grpc.JobServiceServicer):
         title      = (request.title or "").strip()
         table_cfg  = request.table_config_json or ""
         chart_cfg  = request.chart_config_json or ""
+
+        print(f"Title: {title}", flush=True)
 
         # 1) insert metadata row in MSSQL (state=PENDING)
         with _mssql_conn() as cx:

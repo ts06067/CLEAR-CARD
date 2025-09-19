@@ -1,3 +1,4 @@
+// client/src/features/job/JobDetailPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getJob, getJobStatus, getResultJson } from "../../api/jobs";
@@ -76,11 +77,15 @@ export default function JobDetailPage() {
         if (!alive) return;
         setStatus(s.state);
 
-        if (s.state === "SUCCEEDED") {
+        if (s.state === "FAILED") {
+          setErr(s.error || "Job failed");
+        } else if (s.state === "SUCCEEDED") {
           const data = await getResultJson(id);
           if (!alive) return;
-          loadedRef.current = true;
-          setRows(Array.isArray(data) ? data : []);
+          if (data && Array.isArray(data)) {
+            loadedRef.current = true;
+            setRows(data);
+          }
         }
       } catch (e: any) {
         setErr(e?.message ?? "Failed to load");
@@ -90,12 +95,27 @@ export default function JobDetailPage() {
     })();
 
     const poll = setInterval(async () => {
-      const s = await getJobStatus(id);
-      setStatus(s.state);
-      if (s.state === "SUCCEEDED" && !loadedRef.current) {
-        const data = await getResultJson(id);
-        loadedRef.current = true;
-        setRows(Array.isArray(data) ? data : []);
+      try {
+        const s = await getJobStatus(id);
+        setStatus(s.state);
+
+        if (s.state === "FAILED") {
+          setErr(s.error || "Job failed");
+          clearInterval(poll);
+          return;
+        }
+
+        if (s.state === "SUCCEEDED" && !loadedRef.current) {
+          const data = await getResultJson(id);
+          if (data && Array.isArray(data)) {
+            loadedRef.current = true;
+            setRows(data);
+            clearInterval(poll); // stop after success
+          }
+          // if data === null (409/404), keep polling quietly
+        }
+      } catch (_e) {
+        // swallow transient errors; keep polling
       }
     }, 2500);
 

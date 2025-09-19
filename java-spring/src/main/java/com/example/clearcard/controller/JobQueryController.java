@@ -19,6 +19,7 @@ public class JobQueryController {
     private final UserRepository users;
     private final JobConfigRepository configs;
     private final PinRepository pins;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public JobQueryController(JobsDao dao, JobClient jobClient, UserRepository users,
                               JobConfigRepository configs, PinRepository pins) {
@@ -54,17 +55,26 @@ public class JobQueryController {
         var d = dao.getOne(id, me.getUsername()).orElse(null);
         if (d == null) return ResponseEntity.notFound().build();
 
-        var cfg = configs.findByJobIdAndUserId(id, u.getId()).orElse(null);
-        var ref = jobClient.manifest(id);  // may not be OK yet
+        var cfgEnt = configs.findByJobIdAndUserId(id, u.getId()).orElse(null);
 
-        var out = new LinkedHashMap<String,Object>();
-        out.put("job", d);
-        out.put("config", cfg);
-        out.put("result", Map.of(
-                "status", ref.getStatus(),
-                "manifest_gs_uri", ref.getGcsManifestUri(),
-                "error", ref.getErrorMessage()
-        ));
+        Object qb = null, cfg = null;
+        String title = null;
+        if (cfgEnt != null) {
+            title = cfgEnt.getTitle();
+            try { qb  = cfgEnt.getTableConfig()  == null ? null : mapper.readValue(cfgEnt.getTableConfig(),  Object.class); }
+            catch (Exception e) { qb = cfgEnt.getTableConfig(); }
+            try { cfg = cfgEnt.getChartConfig()  == null ? null : mapper.readValue(cfgEnt.getChartConfig(),  Object.class); }
+            catch (Exception e) { cfg = cfgEnt.getChartConfig(); }
+        }
+
+        var out = new java.util.LinkedHashMap<String,Object>();
+        out.put("id", d.job_id());
+        out.put("title", title);
+        out.put("sql", d.sql_text());
+        out.put("status", d.state());
+        out.put("created_at", d.submitted_at().toString());
+        out.put("owner_id", me.getUsername());
+        out.put("config", java.util.Map.of("qb", qb, "cfg", cfg));
         out.put("pinned", pins.existsByUserIdAndJobId(u.getId(), id));
         return ResponseEntity.ok(out);
     }
@@ -77,6 +87,30 @@ public class JobQueryController {
             var p = new PinEntity(); p.setUserId(u.getId()); p.setJobId(id); pins.save(p);
         }
         return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("/jobs/{id}/pin")
+    public ResponseEntity<Void> pinPatch(@AuthenticationPrincipal User me,
+                                         @PathVariable String id,
+                                         @RequestBody java.util.Map<String, Object> body) {
+        if (me == null) return ResponseEntity.status(401).build();
+        var u = users.findByUsername(me.getUsername()).orElseThrow();
+
+        boolean pinned = false;
+        if (body != null && body.containsKey("pinned")) {
+            Object v = body.get("pinned");
+            pinned = v instanceof Boolean ? (Boolean) v : "true".equalsIgnoreCase(String.valueOf(v));
+        }
+
+        if (pinned) {
+            if (!pins.existsByUserIdAndJobId(u.getId(), id)) {
+                var p = new PinEntity(); p.setUserId(u.getId()); p.setJobId(id); pins.save(p);
+            }
+            return ResponseEntity.ok().build();
+        } else {
+            pins.deleteByUserIdAndJobId(u.getId(), id);
+            return ResponseEntity.noContent().build();
+        }
     }
 
     @DeleteMapping("/jobs/{id}/pin")

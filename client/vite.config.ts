@@ -9,6 +9,7 @@ export default defineConfig({
         target: "http://localhost:8080",
         changeOrigin: true,
         secure: false,
+        // IMPORTANT: strip the /api prefix so Spring sees /jobs, not /api/jobs
         rewrite: (path) => path.replace(/^\/api/, "")
       }
     }

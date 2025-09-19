@@ -24,7 +24,7 @@ WORKDIR /app
 
 # Python deps
 RUN pip install --no-cache-dir \
-      pyodbc redis google-cloud-storage python-dotenv
+      pyodbc redis google-cloud-storage python-dotenv grpcio grpcio-tools
 
 # (Optional) remove build chain to slim image down
 RUN set -eux; \
@@ -34,6 +34,10 @@ RUN set -eux; \
 
 # App code
 COPY worker.py /app/
+COPY protos /app/protos
+
+# Generate gRPC stubs from protos
+RUN python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/flag.proto
 
 EXPOSE 50051
 CMD ["python","/app/worker.py"]
