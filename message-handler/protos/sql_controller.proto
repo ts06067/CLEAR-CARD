@@ -1,0 +1,33 @@
+syntax = "proto3";
+package com.example.clearcard;
+
+// Java options (match your Spring package)
+option java_multiple_files = true;
+option java_package = "com.example.clearcard";
+option java_outer_classname = "SqlControllerProto";
+
+message SqlRequest {
+  string sql       = 1;
+  int32  page_size = 2;
+  string request_id = 3;
+}
+
+message Schema {
+  repeated string columns = 1;
+}
+
+message Row {
+  repeated string cells = 1;
+}
+
+message SqlChunk {
+  Schema schema       = 1;            // present on first chunk
+  repeated Row rows   = 2;            // data chunks
+  string status       = 3;            // "OK" | "ERROR"
+  string error_message = 4;
+  bool   last         = 5;
+}
+
+service SqlController {
+  rpc Run (SqlRequest) returns (stream SqlChunk);
+}

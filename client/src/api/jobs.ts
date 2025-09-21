@@ -6,7 +6,10 @@ export interface JobSummary {
   id: string;
   title?: string;
   createdAt: string;
+  completedAt?: string;
   status: "PENDING" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  tableConfig?: any;
+  chartConfig?: any;
   pinned?: boolean;
 }
 export interface JobDetail extends JobSummary {
@@ -36,6 +39,12 @@ function normalizeStatus(s: any): JobSummary["status"] {
   return v as JobSummary["status"];
 }
 
+function tryParseJSON(maybeJSON: any) {
+  if (maybeJSON == null) return undefined;
+  if (typeof maybeJSON !== "string") return maybeJSON;
+  try { return JSON.parse(maybeJSON); } catch { return maybeJSON; }
+}
+
 function normalizeSummary(raw: any): JobSummary | null {
   const idRaw = raw?.id ?? raw?.jobId ?? raw?.job_id ?? raw?.uuid ?? raw?.job?.id;
   const id = (idRaw !== undefined && idRaw !== null) ? String(idRaw) : "";
@@ -44,17 +53,28 @@ function normalizeSummary(raw: any): JobSummary | null {
   const title = raw?.title ?? raw?.name ?? raw?.jobTitle ?? undefined;
 
   const createdAtRaw =
-    raw?.createdAt ??
-    raw?.created_at ??
-    raw?.createdDate ??
-    raw?.created_date ??
-    raw?.createdTime ??
-    raw?.created_time ??
-    new Date().toISOString();
+    raw?.createdAt ?? raw?.created_at ?? raw?.submitted_at ??
+    raw?.createdDate ?? raw?.created_date ?? raw?.createdTime ??
+    raw?.created_time ?? new Date().toISOString();
+
+  const completedAtRaw =
+    raw?.completedAt ?? raw?.completed_at ?? raw?.finished_at ?? undefined;
 
   const status = normalizeStatus(raw?.status ?? raw?.state ?? raw?.jobStatus);
 
-  return { id: id.trim(), title, createdAt: String(createdAtRaw), status };
+  // new fields coming from the DAO join
+  const tableConfig = tryParseJSON(raw?.table_config ?? raw?.tableConfig);
+  const chartConfig = tryParseJSON(raw?.chart_config ?? raw?.chartConfig);
+
+  return {
+    id: id.trim(),
+    title,
+    createdAt: String(createdAtRaw),
+    completedAt: completedAtRaw ? String(completedAtRaw) : undefined,
+    status,
+    tableConfig,
+    chartConfig,
+  };
 }
 
 function normalizeDetail(raw: any, jobId: string): JobDetail {
@@ -88,8 +108,6 @@ export async function submitJob(
     maxRows: opts?.maxRows ?? 5_000_000
   };
 
-  console.log("Submitting job with params:", params, "and config:", opts?.config);
-
   await ensureCsrfCookie();
 
   try {
@@ -101,8 +119,6 @@ export async function submitJob(
       },
       params
     });
-
-    console.log("Job submitted, got response:", data);
     return data;
   } catch (err: any) {
     const status = err?.response?.status;
@@ -131,7 +147,6 @@ export async function getJobStatus(jobId: string) {
 
 export async function getResultJson(jobId: string) {
   if (!jobId) throw new Error("jobId required");
-  // Treat 409/404 as "not ready" and return null instead of throwing.
   try {
     const { data } = await api.get<any[]>(`/jobs/${jobId}/download.json`, {
       headers: { Accept: "application/json" },
@@ -139,7 +154,6 @@ export async function getResultJson(jobId: string) {
     });
     return data;
   } catch (err: any) {
-    console.error("Error fetching JSON result for job", jobId, err);
     const st = err?.response?.status;
     if (st === 409 || st === 404) return null;
     throw err;
@@ -153,10 +167,14 @@ export function getResultCsvUrl(jobId: string) {
 export async function listMyJobs() {
   try {
     const { data } = await api.get<any[]>("/jobs/mine");
-    return (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
+    return (Array.isArray(data) ? data : [])
+      .map(normalizeSummary)
+      .filter(Boolean) as JobSummary[];
   } catch {
     const { data } = await api.get<any[]>("/jobs", { params: { owner: "me" } });
-    return (Array.isArray(data) ? data : []).map(normalizeSummary).filter(Boolean) as JobSummary[];
+    return (Array.isArray(data) ? data : [])
+      .map(normalizeSummary)
+      .filter(Boolean) as JobSummary[];
   }
 }
 
@@ -169,6 +187,6 @@ export async function setServerPin(jobId: string, pinned: boolean) {
   try {
     await api.patch(`/jobs/${jobId}/pin`, { pinned });
   } catch {
-    // ignore best-effort pin errors
+    // best effort
   }
 }

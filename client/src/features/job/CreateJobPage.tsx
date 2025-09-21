@@ -4,17 +4,15 @@ import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { createJob, reset } from "./jobRunSlice";
 import ConditionBuilder from "../builder/ConditionBuilder";
 import ChartConfigPanel from "../config/ChartConfigPanel";
-import { buildSql } from "../../utils/buildSql"; // reuse (:contentReference[oaicite:6]{index=6})
-import SqlPreview from "../../components/SqlPreview"; // reuse
+import { buildSql } from "../../utils/buildSql";
+import SqlPreview from "../../components/SqlPreview";
 import type { RuleGroupType } from "react-querybuilder";
 import type { ChartConfig, AxisField } from "../config/chartConfig";
+import LoadingOverlay from "../../components/LoadingOverlay";
 
 export default function CreateJobPage() {
   const [title, setTitle] = useState("");
-  const [qb, setQb] = useState<RuleGroupType>({
-    combinator: "and",
-    rules: []
-  });
+  const [qb, setQb] = useState<RuleGroupType>({ combinator: "and", rules: [] });
   const [cfg, setCfg] = useState<ChartConfig>({
     x: "cited_pub_year",
     groupBy: ["cited_journal"] as AxisField[],
@@ -31,7 +29,9 @@ export default function CreateJobPage() {
   const nav = useNavigate();
 
   return (
-    <div className="space-y-4">
+    <div className="p-4 pt-16 space-y-4 overflow-x-hidden">
+      <LoadingOverlay open={submitting} text="Submitting job…" />
+
       <h1 className="text-3xl font-extrabold tracking-tight">Create Job</h1>
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-12 lg:col-span-5 space-y-4">
@@ -44,6 +44,7 @@ export default function CreateJobPage() {
           <ConditionBuilder query={qb} onChange={setQb} />
           <ChartConfigPanel cfg={cfg} onChange={setCfg} />
         </div>
+
         <div className="col-span-12 lg:col-span-7 space-y-4">
           <div className="card">
             <div className="card-h">SQL Preview</div>
@@ -56,7 +57,7 @@ export default function CreateJobPage() {
                   const r:any = await dispatch(createJob({ sql, title, config: { qb, cfg }}));
                   if (r.meta.requestStatus === "fulfilled") {
                     dispatch(reset());
-                    nav("/jobs"); // leave immediately after click
+                    nav("/jobs");
                   }
                 }}
               >

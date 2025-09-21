@@ -1,17 +1,17 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { motion } from "motion/react";
-import { Home, PlusSquare, ListTodo, LogOut } from "lucide-react";
+import { Home, BookOpen, PlusSquare, ListTodo } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import { useAppDispatch } from "../app/hooks";
-import { logout } from "../features/auth/authSlice";
+//import { useAppDispatch } from "../app/hooks";
 
 export default function DashboardLayout() {
   const loc = useLocation();
-  const dispatch = useAppDispatch();
+  //const dispatch = useAppDispatch();
 
   const nav = [
     { to: "/dashboard", icon: Home, label: "Dashboard" },
+    { to: "/articles", icon: BookOpen, label: "Article Explorer" },
     { to: "/jobs", icon: ListTodo, label: "Job Lists" },
     { to: "/jobs/create", icon: PlusSquare, label: "Create Job" }
   ];
@@ -19,17 +19,10 @@ export default function DashboardLayout() {
   return (
     <div className="min-h-screen flex bg-slate-50">
       <Sidebar
-        brand="CLEAR-CARD"
+        brand="CLEAR-CARD Data Explorer"
         items={nav}
         footer={
-          <button
-            className="w-full btn btn-ghost mt-4"
-            onClick={() => dispatch(logout())}
-            title="Log out"
-          >
-            <LogOut className="mr-2 h-4 w-4"/> Logout
-          </button>
-        }
+        null}
       />
       <div className="flex-1 flex flex-col">
         <Topbar/>

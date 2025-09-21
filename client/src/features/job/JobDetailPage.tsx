@@ -1,9 +1,10 @@
 // client/src/features/job/JobDetailPage.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { getJob, getJobStatus, getResultJson } from "../../api/jobs";
 import ResultTable from "../../components/ResultTable";
 import InteractiveChart from "../../components/InteractiveChart";
+import LoadingOverlay from "../../components/LoadingOverlay";
 import type { ChartConfig } from "../config/chartConfig";
 
 /** number coercion for "123" → 123 */
@@ -20,15 +21,9 @@ function asNumber(v: any): number | undefined {
 function pickXKey(rows: any[], cfg: ChartConfig | null): string {
   const first = rows?.[0];
   if (!first) return "x";
-
-  // If config x exists in data, use it
   if (cfg?.x && Object.prototype.hasOwnProperty.call(first, cfg.x)) return cfg.x;
-
-  // Prefer common time/index fields
   const prefs = ["cited_pub_year", "cited_pub_date", "cited_pub_month", "cited_pub_day"];
   for (const p of prefs) if (Object.prototype.hasOwnProperty.call(first, p)) return p;
-
-  // Otherwise first non-numeric-looking key
   const keys = Object.keys(first);
   const nonNum = keys.find((k) => asNumber(first[k]) === undefined);
   return nonNum ?? keys[0] ?? "x";
@@ -44,7 +39,6 @@ function pickMeasureKey(rows: any[], cfg: ChartConfig | null): string | undefine
   }
   if (Object.prototype.hasOwnProperty.call(first, "n_articles")) return "n_articles";
   if (Object.prototype.hasOwnProperty.call(first, "y_value")) return "y_value";
-  // Fallback: first numeric key
   return Object.keys(first).find((k) => asNumber(first[k]) !== undefined);
 }
 
@@ -56,6 +50,7 @@ function makeGroupLabel(row: any, fields: string[]): string {
 
 export default function JobDetailPage() {
   const { id = "" } = useParams();
+  const nav = useNavigate();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>();
   const [detail, setDetail] = useState<any>();
@@ -110,12 +105,11 @@ export default function JobDetailPage() {
           if (data && Array.isArray(data)) {
             loadedRef.current = true;
             setRows(data);
-            clearInterval(poll); // stop after success
+            clearInterval(poll);
           }
-          // if data === null (409/404), keep polling quietly
         }
       } catch (_e) {
-        // swallow transient errors; keep polling
+        console.error("Error polling job status", _e);
       }
     }, 2500);
 
@@ -130,20 +124,16 @@ export default function JobDetailPage() {
   const xKey = useMemo<string>(() => pickXKey(rows, cfg), [rows, cfg]);
   const measureKey = useMemo<string | undefined>(() => pickMeasureKey(rows, cfg), [rows, cfg]);
 
-  // GROUPED CHART PIVOT
   const { chartData, seriesKeys } = useMemo(() => {
     if (!rows?.length || !measureKey) return { chartData: [] as any[], seriesKeys: [] as string[] };
 
     const groupFields = (cfg?.groupBy ?? []).filter(Boolean) as string[];
-    // If no grouping specified, treat as single-series
     const singleSeries = groupFields.length === 0;
 
-    // Accumulate by x value
     const xMap = new Map<string | number, any>();
-    const totals = new Map<string, number>(); // per-series total to rank top-N
+    const totals = new Map<string, number>();
     let hadOther = false;
 
-    // Build rows -> { [xKey]: value, seriesA: n, seriesB: n, ... }
     for (const r of rows) {
       const xVal = r[xKey];
       const label = singleSeries ? "__single__" : makeGroupLabel(r, groupFields);
@@ -157,7 +147,6 @@ export default function JobDetailPage() {
       totals.set(label, (totals.get(label) ?? 0) + y);
     }
 
-    // Choose top N series to color distinctly; merge rest into "Other"
     const limit = Math.max(1, Math.min(12, singleSeries ? 1 : 12));
     let labels = Array.from(totals.entries())
       .sort((a, b) => b[1] - a[1])
@@ -183,13 +172,8 @@ export default function JobDetailPage() {
       data.push(obj);
     }
 
-    const finalKeys = singleSeries
-      ? ["__single__"]
-      : hadOther
-      ? [...TOP, OTHER]
-      : TOP;
+    const finalKeys = singleSeries ? ["__single__"] : hadOther ? [...TOP, OTHER] : TOP;
 
-    // If single series, rename the synthetic key to the measure name for legend clarity
     if (singleSeries) {
       for (const row of data) {
         if (row.__single__ != null) {
@@ -203,14 +187,25 @@ export default function JobDetailPage() {
     return { chartData: data, seriesKeys: finalKeys };
   }, [rows, cfg, xKey, measureKey]);
 
+  const showOverlay = loading || (!loadedRef.current && status !== "FAILED");
+
   return (
-    <div className="space-y-4">
+    <div className="p-4 pt-16 space-y-4 overflow-x-hidden">
+      {/* Back button & title */}
       <div className="flex items-baseline gap-3">
+        <button
+          className="px-3 py-1.5 rounded-lg border hover:bg-slate-100"
+          onClick={() => nav(-1)}
+        >
+          ← Back
+        </button>
         <h1 className="text-3xl font-extrabold tracking-tight">Job Detail</h1>
         <span className="text-slate-500">#{id}</span>
       </div>
 
-      {loading && <div>Loading…</div>}
+      {/* Page-level loading overlay */}
+      <LoadingOverlay open={showOverlay} text="Loading result…" />
+
       {err && <div className="text-red-600">{err}</div>}
 
       {detail && (
@@ -254,10 +249,11 @@ export default function JobDetailPage() {
               <div className="card-b">
                 {chartData.length > 0 && seriesKeys.length > 0 ? (
                   <InteractiveChart
-                    kind="bar"
+                    defaultKind="bar"
                     data={chartData}
                     xKey={xKey}
                     yKeys={seriesKeys.map((k) => ({ key: k, name: k }))}
+                    xLabel={xKey}
                   />
                 ) : (
                   <div className="text-sm text-slate-500">No numeric series to plot.</div>

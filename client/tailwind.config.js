@@ -3,7 +3,10 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     fontFamily: {
-      sans: ['Helvetica', 'Arial', 'ui-sans-serif', 'system-ui']
+        // Inter first, then excellent system fallbacks
+        sans: ["Inter", "ui-sans-serif", "system-ui", "Segoe UI",
+               "Roboto", "Helvetica Neue", "Arial", "Noto Sans",
+               "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"]
     },
     extend: {
       colors: {
