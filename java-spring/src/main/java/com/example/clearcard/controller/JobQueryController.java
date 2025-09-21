@@ -26,22 +26,22 @@ public class JobQueryController {
         this.dao = dao; this.jobClient = jobClient; this.users = users; this.configs = configs; this.pins = pins;
     }
 
-    /** Legacy list endpoint (kept for compatibility). */
+    /** Legacy list endpoint (kept for compatibility) – now includes title/table_config/chart_config. */
     @GetMapping("/jobs")
-    public ResponseEntity<List<JobRow>> listMyJobsLegacy(@AuthenticationPrincipal User me,
-                                                         @RequestParam(defaultValue = "20") int limit,
-                                                         @RequestParam(defaultValue = "0") int offset) {
-        if (me == null) return ResponseEntity.status(401).build(); // avoid NPE → 500
+    public ResponseEntity<List<JobsDao.JobListRow>> listMyJobsLegacy(@AuthenticationPrincipal User me,
+                                                                     @RequestParam(defaultValue = "20") int limit,
+                                                                     @RequestParam(defaultValue = "0") int offset) {
+        if (me == null) return ResponseEntity.status(401).build();
         var safeLimit = Math.min(Math.max(limit, 1), 100);
         var safeOffset = Math.max(offset, 0);
         return ResponseEntity.ok(dao.listByUser(me.getUsername(), safeLimit, safeOffset));
     }
 
-    /** New endpoint expected by the client: /api/jobs/mine → proxy → /jobs/mine */
+    /** New client endpoint – same payload as legacy but path /jobs/mine */
     @GetMapping("/jobs/mine")
-    public ResponseEntity<List<JobRow>> listMyJobs(@AuthenticationPrincipal User me,
-                                                   @RequestParam(defaultValue = "20") int limit,
-                                                   @RequestParam(defaultValue = "0") int offset) {
+    public ResponseEntity<List<JobsDao.JobListRow>> listMyJobs(@AuthenticationPrincipal User me,
+                                                               @RequestParam(defaultValue = "20") int limit,
+                                                               @RequestParam(defaultValue = "0") int offset) {
         if (me == null) return ResponseEntity.status(401).build();
         var safeLimit = Math.min(Math.max(limit, 1), 100);
         var safeOffset = Math.max(offset, 0);

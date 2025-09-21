@@ -1,33 +1,38 @@
 package com.example.clearcard.config;
 
 import com.example.clearcard.JobServiceGrpc;
+import com.example.clearcard.sql.SqlControllerGrpc; // <-- new package
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@Slf4j
 @Configuration
+@RequiredArgsConstructor
 public class GrpcClientConfig {
-    private static final Logger log = LoggerFactory.getLogger(GrpcClientConfig.class);
 
     private final AppProps props;
-    public GrpcClientConfig(AppProps props) { this.props = props; }
 
     @Bean(destroyMethod = "shutdownNow")
-    ManagedChannel jobChannel() {
+    public ManagedChannel grpcChannel() {
         String host = props.grpc().getHandlerHost();
         int port = props.grpc().getHandlerPort();
-        log.info("gRPC JobService channel → {}:{}", host, port);
-        return ManagedChannelBuilder
-                .forAddress(host, port)
-                .usePlaintext() // TLS later
+        log.info("gRPC channel → {}:{}", host, port);
+        return ManagedChannelBuilder.forAddress(host, port)
+                .usePlaintext()
                 .build();
     }
 
     @Bean
-    JobServiceGrpc.JobServiceBlockingStub jobStub(ManagedChannel ch) {
+    public JobServiceGrpc.JobServiceBlockingStub jobStub(ManagedChannel ch) {
         return JobServiceGrpc.newBlockingStub(ch);
+    }
+
+    @Bean
+    public SqlControllerGrpc.SqlControllerBlockingStub sqlStub(ManagedChannel ch) {
+        return SqlControllerGrpc.newBlockingStub(ch);
     }
 }

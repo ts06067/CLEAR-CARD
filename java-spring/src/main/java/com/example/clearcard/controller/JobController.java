@@ -19,20 +19,20 @@ import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Map;
 
 @Slf4j
-@RequiredArgsConstructor
 @RestController
-@RequestMapping({ "", "/api" }) // <-- serve both /jobs/** and /api/jobs/**
+@RequiredArgsConstructor
+@RequestMapping({ "", "/api" }) // serve both /jobs/** and /api/jobs/**
 public class JobController {
 
     private final JobClient jobClient;
@@ -53,7 +53,7 @@ public class JobController {
         try { return mapper.writeValueAsString(n); } catch (Exception e) { return null; }
     }
 
-    /* -------------------- Unified Submit (JSON or text/plain) -------------------- */
+    /* -------------------- Submit -------------------- */
 
     public static record SubmitSqlJobRequest(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String sql,
@@ -68,7 +68,7 @@ public class JobController {
             consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_PLAIN_VALUE },
             produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public ResponseEntity<JobSubmitResponse> submitUnified(
+    public JobSubmitResponse submitUnified(
             @RequestBody String body,
             @RequestParam(defaultValue="csv") @Pattern(regexp="csv") String format,
             @RequestParam(defaultValue="5000") @Min(100) @Max(100_000) int pageSize,
@@ -91,7 +91,7 @@ public class JobController {
             if (contentType != null && contentType.toLowerCase().startsWith(MediaType.APPLICATION_JSON_VALUE)) {
                 SubmitSqlJobRequest req = mapper.readValue(body, SubmitSqlJobRequest.class);
                 if (req == null || req.sql() == null || req.sql().isBlank()) {
-                    return ResponseEntity.badRequest().build();
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing sql");
                 }
                 sql = req.sql();
                 title = req.title();
@@ -99,7 +99,7 @@ public class JobController {
                 chartConfigJson = req.chartConfig() == null ? null : toJson(req.chartConfig());
             } else {
                 sql = body;
-                if (sql == null || sql.isBlank()) return ResponseEntity.badRequest().build();
+                if (sql == null || sql.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing sql");
                 title = xTitle;
 
                 if (xConfig != null && !xConfig.isBlank()) {
@@ -114,9 +114,10 @@ public class JobController {
                     }
                 }
             }
+        } catch (ResponseStatusException rse) {
+            throw rse;
         } catch (Exception parseEx) {
-            log.warn("Invalid /jobs payload: {}", parseEx.getMessage());
-            return ResponseEntity.badRequest().build();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid request body");
         }
 
         var ack = jobClient.submit(sql, format, pageSize, maxRows, username, xReqId, title, tableConfigJson, chartConfigJson);
@@ -137,9 +138,7 @@ public class JobController {
             log.warn("Failed to persist job config for job {}", ack.getJobId(), ex);
         }
 
-        return ResponseEntity.accepted()
-                .location(java.net.URI.create("/jobs/" + ack.getJobId()))
-                .body(new JobSubmitResponse(ack.getJobId(), ack.getStatus()));
+        return new JobSubmitResponse(ack.getJobId(), ack.getStatus());
     }
 
     /* -------------------- Status / Result pointer -------------------- */
@@ -151,23 +150,23 @@ public class JobController {
     }
 
     @GetMapping(value="/jobs/{id}/result", produces=MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<JobResultResponse> result(@PathVariable("id") String id) {
+    public JobResultResponse result(@PathVariable("id") String id) {
         var ref = jobClient.manifest(normId(id));
         if (!"OK".equals(ref.getStatus())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(new JobResultResponse(null, ref.getStatus(), ref.getErrorMessage()));
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ref.getErrorMessage() == null ? ref.getStatus() : ref.getErrorMessage());
         }
-        return ResponseEntity.ok(new JobResultResponse(ref.getGcsManifestUri(), "OK", ""));
+        return new JobResultResponse(ref.getGcsManifestUri(), "OK", "");
     }
 
     /* -------------------- Downloads -------------------- */
 
     @GetMapping(value = "/jobs/{id}/download.csv", produces = "text/csv; charset=UTF-8")
     public ResponseEntity<StreamingResponseBody> downloadCsv(@PathVariable("id") String id) {
-        var ref = jobClient.manifest(id);
-        log.info("downloadCsv for job {}: {}", id, ref.getStatus());
+        var ref = jobClient.manifest(normId(id));
         if (!"OK".equals(ref.getStatus())) {
-            return conflictCsv(ref);
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(out -> out.write(("status=" + ref.getStatus() + ", error=" + ref.getErrorMessage()).getBytes(StandardCharsets.UTF_8)));
         }
         StreamingResponseBody body = csvMergeService.mergedCsvFromManifestGs(ref.getGcsManifestUri());
         return ResponseEntity.ok()
@@ -177,50 +176,44 @@ public class JobController {
     }
 
     @GetMapping(value = "/jobs/{id}/download.json", produces = "application/json; charset=UTF-8")
-    public ResponseEntity<?> downloadJson(@PathVariable("id") String id) {
+    public ResponseEntity<byte[]> downloadJson(@PathVariable("id") String id) {
         final String nid = normId(id);
         try {
             var ref = jobClient.manifest(nid);
             log.info("downloadJson for job {}: {}", nid, ref.getStatus());
+
             if (!"OK".equals(ref.getStatus())) {
-                log.info("OK status but error:");
+                String msg = (ref.getErrorMessage() == null ? ref.getStatus() : ref.getErrorMessage());
+                byte[] err = ("{\"status\":409,\"error\":" + mapper.writeValueAsString(msg) + "}").getBytes(StandardCharsets.UTF_8);
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body(java.util.Map.of(
-                                "status", 409,
-                                "error", ref.getErrorMessage() == null ? ref.getStatus() : ref.getErrorMessage()
-                        ));
+                        .header("Cache-Control", "no-store")
+                        .body(err);
             }
-            log.info("jsonArrayFromManifestGs");
-            StreamingResponseBody body = csvJsonService.jsonArrayFromManifestGs(ref.getGcsManifestUri());
-            log.info("downloadJson success");
+
+            // Non-streaming: build full JSON and return (prevents client early-cancel issues)
+            byte[] payload = csvJsonService.jsonArrayBytesFromManifestGs(ref.getGcsManifestUri());
             return ResponseEntity.ok()
-                    .header("Cache-Control", "no-store")
-                    .body(body);
-        } catch (ResponseStatusException rse) {
-            HttpStatus st = HttpStatus.valueOf(rse.getStatusCode().value());
-            return ResponseEntity.status(st)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(java.util.Map.of(
-                            "status", st.value(),
-                            "error", rse.getReason() == null ? "Failed to stream result" : rse.getReason()
-                    ));
+                    .header("Cache-Control", "no-store")
+                    .body(payload);
+
+        } catch (ResponseStatusException rse) {
+            String msg = rse.getReason() == null ? "Failed to stream result" : rse.getReason();
+            byte[] err = ("{\"status\":" + rse.getStatusCode().value() + ",\"error\":" +
+                    mapper.valueToTree(msg).toString() + "}").getBytes(StandardCharsets.UTF_8);
+            return ResponseEntity.status(rse.getStatusCode().value())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Cache-Control", "no-store")
+                    .body(err);
+
         } catch (Exception ex) {
             log.error("download.json failed for {}", nid, ex);
+            byte[] err = "{\"status\":409,\"error\":\"Result not ready or unavailable\"}".getBytes(StandardCharsets.UTF_8);
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(java.util.Map.of(
-                            "status", 409,
-                            "error", "Result not ready or unavailable"
-                    ));
+                    .header("Cache-Control", "no-store")
+                    .body(err);
         }
-    }
-
-    private ResponseEntity<StreamingResponseBody> conflictCsv(com.example.clearcard.ResultManifestRef ref) {
-        StreamingResponseBody errBody = out -> {
-            String msg = "status=" + ref.getStatus() + ", error=" + ref.getErrorMessage();
-            out.write(msg.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        };
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(errBody);
     }
 }

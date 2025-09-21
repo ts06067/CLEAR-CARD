@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+/* On-the-wire package (MUST match Python server). */
+package com.example.clearcard;
+
+/* IMPORTANT: Generate Java to a different package to avoid collisions. */
+option java_package = "com.example.clearcard.sql";
+option java_multiple_files = true;
+option java_outer_classname = "SqlControllerProto";
+
+message SqlRequest {
+  string sql        = 1;
+  int32  page_size  = 2;
+  string request_id = 3;
+}
+
+message Schema {
+  repeated string columns = 1;
+}
+
+message Row {
+  repeated string cells = 1;
+}
+
+message SqlChunk {
+  Schema schema        = 1;   // first chunk contains schema
+  repeated Row rows    = 2;   // data rows (batched)
+  string status        = 3;   // "OK" | "ERROR"
+  string error_message = 4;
+  bool   last          = 5;   // server indicates end of stream
+}
+
+service SqlController {
+  rpc Run (SqlRequest) returns (stream SqlChunk);
+}

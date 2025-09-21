@@ -49,7 +49,9 @@ public class SecurityConfig {
                                 "/jobs", "/jobs/**",
                                 "/api/jobs", "/api/jobs/**",
                                 // Optional helper endpoints
-                                "/sql", "/api/sql"
+                                "/sql", "/api/sql",
+                                "/csv", "/api/csv",
+                                "/articles", "/api/articles", "/articles/**", "/api/articles/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
