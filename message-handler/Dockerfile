@@ -31,7 +31,7 @@ COPY job_server.py /app/
 COPY protos /app/protos
 
 # Generate gRPC stubs from protos
-RUN python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/flag.proto
+RUN python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/flag.proto protos/sql_controller.proto
 
 EXPOSE 50051
-CMD ["python", "/app/job_server.py"]
+CMD ["python", "-X", "dev", "/app/job_server.py"]

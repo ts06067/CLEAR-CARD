@@ -2,6 +2,7 @@
 import json, os, time, uuid, hashlib
 from datetime import datetime, timezone
 from concurrent import futures
+import sys
 
 import grpc, redis, pyodbc
 from google.protobuf import timestamp_pb2
@@ -226,6 +227,24 @@ class SqlController(sql_pb2_grpc.SqlControllerServicer):
         finally:
             print(f"[sql] Run end req={req_id} dur={time.time()-t0:.3f}s", flush=True)
 
+def _try_bind(server, address: str) -> bool:
+    try:
+        r = server.add_insecure_port(address)
+        ok = bool(r)
+        print(f"[job_server] bind {address}: {'OK' if ok else 'FAIL'}", flush=True)
+        return ok
+    except Exception as e:
+        print(f"[job_server] bind {address} EXC: {e!r}", flush=True)
+        return False
+
+def _pick_addresses(port: str) -> list[str]:
+    """
+    Bind to IPv4 and IPv6 where available. On Windows, sometimes IPv6-only or IPv4-only is enabled.
+    Docker Linux typically supports both. We’ll attempt both safely.
+    """
+    # Prefer explicit IPv4 + IPv6
+    return [f"0.0.0.0:{port}", f"[::]:{port}"]
+
 def serve():
     port = int(os.getenv("MH_PORT", "50051"))
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=16),
@@ -233,10 +252,28 @@ def serve():
                                   ('grpc.max_receive_message_length', 64*1024*1024)])
     pb_grpc.add_JobServiceServicer_to_server(JobService(), server)
     sql_pb2_grpc.add_SqlControllerServicer_to_server(SqlController(), server)  # NEW
-    server.add_insecure_port(f"[::]:{port}")
-    print(f"[broker] JobService + SqlController listening on :{port}")
+    
+    bound = False
+    for addr in _pick_addresses(port):
+        bound = _try_bind(server, addr) or bound
+
+    if not bound:
+        # Surface clear diagnostic before exiting (this makes Docker logs useful)
+        print(
+            "[job_server] FATAL: could not bind to any address. "
+            "Hints: check port-in-use, IPv4/IPv6 availability, container network.",
+            file=sys.stderr, flush=True
+        )
+        sys.exit(98)  # EADDRINUSE-ish
+
+    print(f"[job_server] listening on port {port}", flush=True)
     server.start()
     server.wait_for_termination()
 
+
 if __name__ == "__main__":
-    serve()
+    try:
+        serve()
+    except Exception as e:
+        print(f"[job_server] FATAL startup EXC: {e!r}", file=sys.stderr, flush=True)
+        sys.exit(99)

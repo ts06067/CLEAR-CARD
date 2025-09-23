@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
@@ -22,7 +24,7 @@ public class GrpcClientConfig {
         int port = props.grpc().getHandlerPort();
         log.info("gRPC channel → {}:{}", host, port);
         return ManagedChannelBuilder.forAddress(host, port)
-                .usePlaintext()
+                .usePlaintext().enableRetry().keepAliveTime(10, TimeUnit.SECONDS)
                 .build();
     }
 

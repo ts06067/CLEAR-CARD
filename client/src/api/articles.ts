@@ -37,7 +37,9 @@ async function getWithFallback<T>(
     signal: opts?.signal,
   };
   try {
+    console.log("GET", path, params);
     const { data } = await api.get<T>(path, cfg);
+    console.log("GOT", path, data);
     return data;
   } catch (err: any) {
     const st = err?.response?.status;

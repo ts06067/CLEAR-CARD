@@ -21,7 +21,7 @@ public class AppProps {
     public static class Grpc {
         /** Default to localhost for non-Docker dev runs. Overridden by app.grpc.handler-host / MSG_HANDLER_HOST in properties/env. */
         @NotBlank
-        private String handlerHost = "127.0.0.1";
+        private String handlerHost = "message-handler";
         @Min(1) @Max(65535)
         private int handlerPort = 50051;
 
